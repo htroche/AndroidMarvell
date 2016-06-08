@@ -6,3 +6,4 @@ To run this Android sample provisioning app you need to:
 
 - This sample app follows the Marvell HomeKit Accessory Kit SDK 0.10 specifications to provision non iOS devices.
 
+- I created the app with Android Studio, but no Android Studio dependencies are checked in. The whole project is gradle based.
