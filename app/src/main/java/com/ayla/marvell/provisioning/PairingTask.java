@@ -2,14 +2,20 @@ package com.ayla.marvell.provisioning;
 
 import android.os.AsyncTask;
 import android.os.Handler;
+import android.widget.Toast;
+
+import com.ayla.marvell.MainActivity;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.StatusLine;
+import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.ResponseHandler;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.BasicResponseHandler;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HTTP;
@@ -22,15 +28,15 @@ import java.util.Random;
 
 public class PairingTask extends AsyncTask<String, String, String> {
 
-    private String networkName;
-    private String networkPassword;
-    private int networkType;
-    private String devicePin;
-    private String sessionID;
-    private String devicePublicKey;
-    private byte[] privateKey;
-    private byte[] publicKey;
-    private byte[] agreementKey;
+    protected String networkName;
+    protected String networkPassword;
+    protected int networkType;
+    protected String devicePin;
+    protected String sessionID;
+    protected String devicePublicKey;
+    protected byte[] privateKey;
+    protected byte[] publicKey;
+    protected byte[] agreementKey;
 
     public ProvisioningHandler handler;
 
@@ -65,6 +71,17 @@ public class PairingTask extends AsyncTask<String, String, String> {
 
     public void setDevicePin(String devicePin) {
         this.devicePin = devicePin;
+    }
+
+    public FinishPairingTask getFinishPairingTask() {
+        FinishPairingTask task = new FinishPairingTask();
+        task.devicePin = this.devicePin;
+        task.sessionID = this.sessionID;
+        task.devicePublicKey = this.devicePublicKey;
+        task.privateKey = this.privateKey;
+        task.publicKey = this.publicKey;
+        task.agreementKey = this.agreementKey;
+        return task;
     }
 
     @Override
@@ -160,13 +177,14 @@ public class PairingTask extends AsyncTask<String, String, String> {
         System.out.println("Marvell network response decrypted: " + this.decryptJSONData(new JSONObject(responseString)));
         if (statusLine.getStatusCode() == HttpStatus.SC_OK) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            response.getEntity().writeTo(out);
-            responseString = out.toString();
-            JSONObject deviceResponse = new JSONObject(responseString);
+            //response.getEntity().writeTo(out);
+            //responseString = out.toString();
+            JSONObject deviceResponse = new JSONObject(this.decryptJSONData(new JSONObject(responseString)));
 
-            System.out.println("Hunter network: " + responseString);
+            System.out.println("Marvell network inner call");
             out.close();
-            this.checkAccessoryStatus();
+            this.handler.success("Finalizing pairing...");
+
         } else {
             //Closes the connection.
             //response.getEntity().getContent().close();
@@ -176,7 +194,7 @@ public class PairingTask extends AsyncTask<String, String, String> {
         }
     }
 
-    private void checkAccessoryStatus() throws Exception {
+    protected void checkAccessoryStatus() throws Exception {
         HttpClient httpclient = new DefaultHttpClient();
         HttpResponse response;
         String responseString = null;
@@ -189,36 +207,24 @@ public class PairingTask extends AsyncTask<String, String, String> {
         response.getEntity().writeTo(out1);
         responseString = out1.toString();
         System.out.println("Marvell accessory status data: " + responseString);
-        System.out.println("Marvell network response decrypted: " + this.decryptJSONData(new JSONObject(responseString)));
+        System.out.println("Marvell network accessory data decrypted: " + this.decryptJSONData(new JSONObject(responseString)));
 
         if (statusLine.getStatusCode() == HttpStatus.SC_OK) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            response.getEntity().writeTo(out);
-            responseString = out.toString();
             System.out.println("Marvell accessory status data: " + responseString);
-            JSONObject deviceResponse = new JSONObject(responseString);
+            JSONObject deviceResponse = new JSONObject(this.decryptJSONData(new JSONObject(responseString)));
             if (deviceResponse.getInt("status") == 0) {
                 this.handler.error(deviceResponse.getString("failure"));
             } else if (deviceResponse.getInt("status") == 2) {
                 this.confirmProvisioning();
+                //this.handler.success(responseString);
             } else if (deviceResponse.getInt("status") == 1 && deviceResponse.getInt("failure_cnt") < 3) { //we retry 3 times
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            checkAccessoryStatus();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }, 1000);
+                this.handler.error(deviceResponse.getString("failure"));
             } else {
                 this.handler.error("Could not configure network");
             }
 
             this.handler.success(responseString);
-            out.close();
+            out1.close();
         } else {
             //Closes the connection.
             //response.getEntity().getContent().close();
@@ -234,8 +240,9 @@ public class PairingTask extends AsyncTask<String, String, String> {
         String responseString = null;
         JSONObject clearJSON = new JSONObject();
         clearJSON.put("prov_client_ack", 1);
+        JSONObject requestData = this.getEncryptedJSON(clearJSON);
         HttpPost post = new HttpPost("http://192.168.10.1/prov/net-info?session_id=" + this.sessionID);
-        StringEntity se = new StringEntity(clearJSON.toString());
+        StringEntity se = new StringEntity(requestData.toString());
         se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/x-www-form-urlencoded"));
         post.setEntity(se);
         response = httpclient.execute(post);
@@ -246,6 +253,8 @@ public class PairingTask extends AsyncTask<String, String, String> {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             response.getEntity().writeTo(out);
             responseString = out.toString();
+            JSONObject deviceResponse = new JSONObject(this.decryptJSONData(new JSONObject(responseString)));
+            System.out.println("Marvell network confirm provisioning decrypted: " + this.decryptJSONData(new JSONObject(responseString)));
             this.handler.success(responseString);
             out.close();
         } else {
@@ -338,6 +347,22 @@ public class PairingTask extends AsyncTask<String, String, String> {
         public void error(String message);
 
         public void success(String message);
+    }
+
+
+    public class finalizePairingTask extends AsyncTask<String, String, String> {
+        @Override
+        protected String doInBackground(String... uri) {
+            String responseString = null;
+            try {
+                checkAccessoryStatus();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                handler.error(e.getMessage());
+            }
+            return responseString;
+        }
     }
 
 }

@@ -8,7 +8,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RadioButton;
 import android.widget.Toast;
+import android.os.Handler;
 
+import com.ayla.marvell.provisioning.FinishPairingTask;
 import com.ayla.marvell.provisioning.PairingTask;
 
 public class MainActivity extends Activity {
@@ -21,7 +23,7 @@ public class MainActivity extends Activity {
     private RadioButton wepSecurity;
     private RadioButton wpaSecurity;
     private RadioButton wapMixedSecurity;
-    private MainActivity instance;
+    public static MainActivity instance;
     private ProgressDialog mDialog;
 
     @Override
@@ -71,7 +73,8 @@ public class MainActivity extends Activity {
                         security = 5;
                     provisionAccessory(wifiNetworkName.getText().toString(), wifiPassword.getText().toString(), security, devicePin.getText().toString());
                 } else {
-                    Toast.makeText(instance.getApplicationContext(), "Incomplete fields. Please fill and select all fields", Toast.LENGTH_LONG).show();
+                    provisionAccessory("Ayla Guest", "@yla607$", 5, "hkAIQImA");
+                    //Toast.makeText(instance.getApplicationContext(), "Incomplete fields. Please fill and select all fields", Toast.LENGTH_LONG).show();
                 }
             }
         });
@@ -79,7 +82,7 @@ public class MainActivity extends Activity {
     }
 
     private void provisionAccessory(String wifiName, String wifiPassword, int wifiSecurity, String devicePin) {
-        PairingTask task = new PairingTask();
+        final PairingTask task = new PairingTask();
         task.setNetworkName(wifiName);
         task.setNetworkPassword(wifiPassword);
         task.setNetworkType(wifiSecurity);
@@ -101,12 +104,33 @@ public class MainActivity extends Activity {
                 instance.cancelProgressDialog();
                 instance.runOnUiThread(new Runnable() {
                     public void run() {
-                        Toast.makeText(instance.getApplicationContext(), "Accessory provisioned!", Toast.LENGTH_LONG).show();
+                        Toast.makeText(instance.getApplicationContext(), "Accessory provisioned part 1!", Toast.LENGTH_LONG).show();
+                        final FinishPairingTask task2 = task.getFinishPairingTask();
+                        task2.handler = new PairingTask.ProvisioningHandler() {
+                            @Override
+                            public void error(String message) {
+
+                            }
+
+                            @Override
+                            public void success(String message) {
+
+                            }
+                        };
+                        Handler handler = new Handler();
+                        handler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                task2.execute("");
+                            }
+                        }, 20000);
+
                     }
                 });
             }
         };
         task.execute("");
+
     }
 
     private void errorToast() {
